@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 
 
 class CaptchaDataset(Dataset):
-    def __init__(self, data_dir, preload, height, width,
+    def __init__(self, data_dir, device, preload, height, width,
                  mean=None, std=None, label_size=None, ext='png', mode='rgb'):
         super().__init__()
 
@@ -17,6 +17,8 @@ class CaptchaDataset(Dataset):
         assert self._data_dir.is_dir(), '{} is not a valid directory'.format(self._data_dir)
         self._paths = list(self._data_dir.glob('*.{}'.format(ext)))
         assert len(self._paths) > 0, 'No files with {} extension found in {}'.format(ext, self._data_dir)
+
+        self.device = device
 
         mode_dict = {'RGB': 'RGB', 'rgb': 'RGB', 'gray': 'L', 'GRAY': 'L', 'L': 'L'}
         assert mode in mode_dict, '{} mode not supported'.format(mode)
@@ -28,11 +30,11 @@ class CaptchaDataset(Dataset):
 
         self.mean = mean
         if self.mean:
-            self.mean = torch.tensor(mean)
+            self.mean = torch.tensor(mean).to(device)
             assert len(self.mean) <= self.dims
         self.std = std
         if self.std:
-            self.std = torch.tensor(std)
+            self.std = torch.tensor(std).to(device)
             assert len(self.std) <= self.dims
 
         self.label_size = label_size
@@ -68,13 +70,13 @@ class CaptchaDataset(Dataset):
             img = img.resize((self.width, self.height))
 
         img = np.array(img)
-        img = torch.tensor(img).permute(2, 0, 1)
+        img = torch.tensor(img).permute(2, 0, 1).to(self.device)
         if self.mean is not None and self.std is not None:
             img = (img - self.mean[:, None, None]) / self.std[:, None, None]
 
         label = Path(path).stem.upper()
         # target dtype must by int32 to work with cudnn ctc loss
-        label = torch.tensor([self.stoi(s) for s in label], dtype=torch.int32)
+        label = torch.tensor([self.stoi(s) for s in label], dtype=torch.int32).to(self.device)
         return img, label
 
     def __getitem__(self, index):
@@ -89,8 +91,9 @@ class CaptchaDataset(Dataset):
 
 if __name__ == '__main__':
     data = Path('train')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if data.is_dir():
-        dataset = CaptchaDataset(data,
+        dataset = CaptchaDataset(data, device,
                                  preload=True,
                                  height=150,
                                  width=330,
@@ -102,7 +105,7 @@ if __name__ == '__main__':
         print(len(dataset))
         print(len(dataset.symbols))
 
-        image = np.array(image.permute(1, 2, 0))
+        image = np.array(image.permute(1, 2, 0).cpu())
         image = image - np.min(image, axis=(0, 1))
         image = image / np.ptp(image, axis=(0, 1)) * 255
         image = image.astype('uint8')
