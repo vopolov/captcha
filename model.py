@@ -41,6 +41,9 @@ if __name__ == '__main__':
     target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32)
 
     model = CaptchaModel(channels, classes, h)
+    print('Number of trainable parameters: {}'.format(sum(p.numel() for p in model.parameters()
+                                                          if p.requires_grad is True)))
+
     criterion = nn.CTCLoss()
 
     output = model(in_tensor)
