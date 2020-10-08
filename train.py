@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.multiprocessing as mp
 import torch.optim as optim
-import tqdm
 from torch.utils.data import DataLoader
 
 from data import CaptchaDataset
@@ -19,7 +18,7 @@ def train_epoch(train_iter, model, criterion, optimizer):
     total_loss = 0
     total_acc = 0
     total = 0
-    for images, labels in tqdm.tqdm(train_iter, 'Train', leave=True):
+    for images, labels in train_iter:
         optimizer.zero_grad()
 
         output = model(images)
@@ -51,6 +50,35 @@ def train_epoch(train_iter, model, criterion, optimizer):
     return total_loss / total, total_acc / total
 
 
+def valid_epoch(valid_iter, model, criterion):
+    model.eval()
+    total_loss = 0
+    total_acc = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in valid_iter:
+            output = model(images)
+            batch = output.shape[1]
+            width = output.shape[0]
+            input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32)
+            label_size = labels.shape[1]
+            target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32)
+            labels = labels.view(-1).to('cpu')
+            loss = criterion(output, labels, input_lens, target_lens)
+
+            total += batch
+            total_loss += loss.item()
+            labels = labels.detach().cpu().numpy()
+            labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
+                                                  range(label_size, len(labels) + 1, label_size))]
+            output = output.detach().cpu().numpy()
+            output = [output[:, i, :] for i in range(batch)]
+            output = [naive_ctc_decode(o) for o in output]
+            total_acc += sum(np.array_equal(o, l) for o, l in zip(output, labels))
+
+    return total_loss / total, total_acc / total
+
+
 def train(train_dir, valid_dir, device, nworkers, epochs):
     train_dir = Path(train_dir)
     assert train_dir.is_dir()
@@ -69,21 +97,30 @@ def train(train_dir, valid_dir, device, nworkers, epochs):
 
     batch_size = 32
 
-    # def collate(batch):
-    #     images, labels = zip(*batch)
-    #     return torch.stack(images), torch.cat(labels)
-
     mp.set_start_method("spawn")
-    train_iter = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=nworkers)  #, collate_fn=collate)
-    valid_iter = DataLoader(valid_dataset, batch_size, shuffle=False, num_workers=nworkers)  #, collate_fn=collate)
+    train_iter = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=nworkers)
+    valid_iter = DataLoader(valid_dataset, batch_size, shuffle=False, num_workers=nworkers)
 
     model = CaptchaModel(train_dataset.dims, len(train_dataset.symbols), height).to(device)
     criterion = nn.CTCLoss().to(device)
     optimizer = optim.Adam(model.parameters())
 
+    best_loss = None
+    best_path = None
+    best_acc = None
+
     for epoch in range(1, epochs + 1):
         train_loss, train_acc = train_epoch(train_iter, model, criterion, optimizer)
-        print('Epoch: {}\nTrain loss:{}\tTrain acc:{}'.format(epoch, train_loss, train_acc))
+        valid_loss, valid_acc = valid_epoch(valid_iter, model, criterion)
+        print('Epoch: {}'.format(epoch))
+        print('Train loss: {:.3f}\tTrain acc: {:.3f}'.format(train_loss, train_acc))
+        print('Valid loss: {:.3f}\tValid acc: {:.3f}'.format(valid_loss, valid_acc))
+        if best_loss is None or valid_loss < best_loss:
+            old_path = best_path
+            best_path = 'captcha_weights_epoch_{:03d}_acc_{:.3f}.pt'.format(epoch, valid_acc)
+            torch.save(model.state_dict(), best_path)
+            if old_path is not None and Path(old_path).is_file():
+                Path(old_path).unlink()
 
 
 def launch_train():
