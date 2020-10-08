@@ -39,9 +39,9 @@ class CaptchaDataset(Dataset):
         if self.label_size is not None:
             self._paths = [p for p in self._paths if len(p.stem) == self.label_size]
 
-        self._symbols = list(ascii_uppercase) + [str(i) for i in range(10)]
-        self._index_dict = {i: s for i, s in enumerate(self._symbols, 1)}  # 0 left for blank predicted symbol
-        self._symbols_dict = {s: i for i, s in enumerate(self._symbols, 1)}
+        self.symbols = ['-'] + list(ascii_uppercase) + [str(i) for i in range(10)]
+        self._index_dict = {i: s for i, s in enumerate(self.symbols, 0)}  # 0 left for blank predicted symbol
+        self._symbols_dict = {s: i for i, s in enumerate(self.symbols, 0)}
 
         self._data = None
         self.preloaded = preload
@@ -99,6 +99,9 @@ if __name__ == '__main__':
                                  label_size=5,
                                  )
         image, text = random.choice(dataset)
+        print(len(dataset))
+        print(len(dataset.symbols))
+
         image = np.array(image.permute(1, 2, 0))
         image = image - np.min(image, axis=(0, 1))
         image = image / np.ptp(image, axis=(0, 1)) * 255
