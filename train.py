@@ -19,7 +19,7 @@ def train_epoch(train_iter, model, criterion, optimizer):
     total_loss = 0
     total_acc = 0
     total = 0
-    for images, labels in tqdm.tqdm(train_iter, 'Train'):
+    for images, labels in tqdm.tqdm(train_iter, 'Train', leave=True):
         optimizer.zero_grad()
 
         output = model(images)
@@ -32,13 +32,19 @@ def train_epoch(train_iter, model, criterion, optimizer):
         loss = criterion(output, labels, input_lens, target_lens)
 
         loss.backward()
+        # nn.utils.clip_grad_norm_(model.parameters(), 10)
         optimizer.step()
 
         total += batch
         total_loss += loss.item()
-        labels = labels.detach().cpu().numpy().split(label_size, axis=0)
-        # labels = labels.detach().cpu().numpy().split(batch, axis=1)
-        output = output.detach().cpu().numpy().split(batch, axis=1)
+        labels = labels.detach().cpu().numpy()
+        # labels = np.split(labels, label_size, axis=0)
+        labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
+                                              range(label_size, len(labels) + 1, label_size))]
+        # labels = np.split(labels, batch, axis=1)
+        output = output.detach().cpu().numpy()
+        # output = np.split(output, batch, axis=1)
+        output = [output[:, i, :] for i in range(batch)]
         output = [naive_ctc_decode(o) for o in output]
         total_acc += sum(np.array_equal(o, l) for o, l in zip(output, labels))
 
@@ -61,7 +67,7 @@ def train(train_dir, valid_dir, device, nworkers, epochs):
     train_dataset = CaptchaDataset(train_dir, device, preload, height, width, mean, std, label_size)
     valid_dataset = CaptchaDataset(valid_dir, device, preload, height, width, mean, std, label_size)
 
-    batch_size = 256
+    batch_size = 32
 
     # def collate(batch):
     #     images, labels = zip(*batch)
@@ -75,7 +81,7 @@ def train(train_dir, valid_dir, device, nworkers, epochs):
     criterion = nn.CTCLoss().to(device)
     optimizer = optim.Adam(model.parameters())
 
-    for epoch in tqdm.tqdm(range(1, epochs + 1), 'Epoch'):
+    for epoch in range(1, epochs + 1):
         train_loss, train_acc = train_epoch(train_iter, model, criterion, optimizer)
         print('Epoch: {}\nTrain loss:{}\tTrain acc:{}'.format(epoch, train_loss, train_acc))
 
