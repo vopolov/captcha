@@ -1,33 +1,43 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet18
+# from torchvision.models import resnet18
 
 
 class CaptchaModel(nn.Module):
-    def __init__(self, in_channels, n_classes, height):
+    def __init__(self, in_channels, n_classes, height, lstm_hidden=512, lstm_layers=2):
         super().__init__()
 
         # self.conv = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3)
         # self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.resnet = nn.Sequential(*list(resnet18(pretrained=False).children())[:-4])  # up to layer 2 / 4
-        print(self.resnet)
-        resnet_dim = 128 * (height // 8 + 1)
-        self.gru = nn.GRU(resnet_dim, n_classes)  #, num_layers=2, bidirectional=True)
+        # self.resnet = nn.Sequential(*list(resnet18(pretrained=False).children())[:-4])  # up to layer 2 / 4
+        # print(self.resnet)
+        # resnet_dim = 128 * (height // 8 + 1)
+        # self.gru = nn.GRU(resnet_dim, n_classes)  #, num_layers=2, bidirectional=True)
         # self.fc = nn.Linear(resnet_dim, n_classes)
+
+        lstm_dim = height * in_channels
+        self.lstm = nn.LSTM(lstm_dim, lstm_hidden, lstm_layers)
+        self.conv = nn.Conv1d(lstm_hidden, n_classes, kernel_size=1, stride=1)
 
     def forward(self, x):
         # x = self.conv(x)
         # x = self.max_pool(x)
         # x = F.relu(x)
-        x = self.resnet(x)
+        # x = self.resnet(x)
 
         batch_size = x.shape[0]
         width = x.shape[3]
         # shape=[batch_dim, ch_dim, h_dim, w_dim] -> [w_dim, b_dim, ch_dim x h_dim]
         x = x.permute(3, 0, 1, 2)
         x = x.view(width, batch_size, -1)
-        x, _ = self.gru(x)
+        # x, _ = self.gru(x)
+        x, _ = self.lstm(x)
+        # shape=[w_dim, b_dim, lstm_hid] -> [b_dim, lstm_hid, w_dim]
+        x = x.permute(1, 2, 0)
+        x = self.conv(x)
+        # shape=[b_dim, cls_dim, w_dim] -> [w_dim, b_dim, cls_dim]
+        x = x.permute(2, 0, 1)
         x = F.log_softmax(x, 2)
         return x
 
