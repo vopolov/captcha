@@ -24,9 +24,9 @@ def train_epoch(train_iter, model, criterion, optimizer):
         output = model(images)
         batch = output.shape[1]
         width = output.shape[0]
-        input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32)
+        input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32, device='cpu')
         label_size = labels.shape[1]
-        target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32)
+        target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32, device='cpu')
         labels = labels.view(-1).to('cpu')
         loss = criterion(output, labels, input_lens, target_lens)
 
@@ -37,12 +37,10 @@ def train_epoch(train_iter, model, criterion, optimizer):
         total += batch
         total_loss += loss.item()
         labels = labels.detach().cpu().numpy()
-        # labels = np.split(labels, label_size, axis=0)
         labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
                                               range(label_size, len(labels) + 1, label_size))]
-        # labels = np.split(labels, batch, axis=1)
+        # labels = [labels[i] for i in range(batch)]
         output = output.detach().cpu().numpy()
-        # output = np.split(output, batch, axis=1)
         output = [output[:, i, :] for i in range(batch)]
         output = [naive_ctc_decode(o) for o in output]
         total_acc += sum(np.array_equal(o, l) for o, l in zip(output, labels))
@@ -60,9 +58,9 @@ def valid_epoch(valid_iter, model, criterion):
             output = model(images)
             batch = output.shape[1]
             width = output.shape[0]
-            input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32)
+            input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32, device='cpu')
             label_size = labels.shape[1]
-            target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32)
+            target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32, device='cpu')
             labels = labels.view(-1).to('cpu')
             loss = criterion(output, labels, input_lens, target_lens)
 
@@ -71,6 +69,7 @@ def valid_epoch(valid_iter, model, criterion):
             labels = labels.detach().cpu().numpy()
             labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
                                                   range(label_size, len(labels) + 1, label_size))]
+            # labels = [labels[i] for i in range(batch)]
             output = output.detach().cpu().numpy()
             output = [output[:, i, :] for i in range(batch)]
             output = [naive_ctc_decode(o) for o in output]
@@ -103,7 +102,7 @@ def train(train_dir, valid_dir, device, nworkers, epochs):
 
     model = CaptchaModel(train_dataset.dims, len(train_dataset.symbols), height).to(device)
     criterion = nn.CTCLoss().to(device)
-    optimizer = optim.Adam(model.parameters())
+    optimizer = optim.Adam(model.parameters(), lr=1e-2)
 
     best_loss = None
     best_path = None
