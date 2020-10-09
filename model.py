@@ -1,22 +1,27 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models import resnet18
 
 
 class CaptchaModel(nn.Module):
     def __init__(self, in_channels, n_classes, height):
         super().__init__()
 
-        self.conv = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3)
-        self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        h_reduced = (height + 2 * 2 - 7 + 1) // 2 + 1
-        h_reduced = (h_reduced + 2 * 1 - 3 + 1) // 2 + 1
-        self.gru = nn.GRU(64 * h_reduced, n_classes)
+        # self.conv = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3)
+        # self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.resnet = nn.Sequential(*list(resnet18(pretrained=False).children())[:-4])  # up to layer 2 / 4
+        print(self.resnet)
+        resnet_dim = 128 * (height // 8 + 1)
+        self.gru = nn.GRU(resnet_dim, n_classes)  #, num_layers=2, bidirectional=True)
+        # self.fc = nn.Linear(resnet_dim, n_classes)
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.max_pool(x)
-        x = F.relu(x)
+        # x = self.conv(x)
+        # x = self.max_pool(x)
+        # x = F.relu(x)
+        x = self.resnet(x)
+
         batch_size = x.shape[0]
         width = x.shape[3]
         # shape=[batch_dim, ch_dim, h_dim, w_dim] -> [w_dim, b_dim, ch_dim x h_dim]
@@ -43,7 +48,7 @@ if __name__ == '__main__':
     model = CaptchaModel(channels, classes, h)
     print('Number of trainable parameters: {}'.format(sum(p.numel() for p in model.parameters()
                                                           if p.requires_grad is True)))
-
+    print(model)
     criterion = nn.CTCLoss()
 
     output = model(in_tensor)
