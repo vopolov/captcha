@@ -27,7 +27,7 @@ def train_epoch(train_iter, model, criterion, optimizer):
         input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32, device='cpu')
         label_size = labels.shape[1]
         target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32, device='cpu')
-        labels = labels.view(-1).to('cpu')
+        # labels = labels.view(-1).to('cpu')
         loss = criterion(output, labels, input_lens, target_lens)
 
         loss.backward()
@@ -37,9 +37,9 @@ def train_epoch(train_iter, model, criterion, optimizer):
         total += batch
         total_loss += loss.item()
         labels = labels.detach().cpu().numpy()
-        labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
-                                              range(label_size, len(labels) + 1, label_size))]
-        # labels = [labels[i] for i in range(batch)]
+        # labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
+        #                                       range(label_size, len(labels) + 1, label_size))]
+        labels = [labels[i] for i in range(batch)]
         output = output.detach().cpu().numpy()
         output = [output[:, i, :] for i in range(batch)]
         output = [naive_ctc_decode(o) for o in output]
@@ -61,15 +61,15 @@ def valid_epoch(valid_iter, model, criterion):
             input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32, device='cpu')
             label_size = labels.shape[1]
             target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32, device='cpu')
-            labels = labels.view(-1).to('cpu')
+            # labels = labels.view(-1).to('cpu')
             loss = criterion(output, labels, input_lens, target_lens)
 
             total += batch
             total_loss += loss.item()
             labels = labels.detach().cpu().numpy()
-            labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
-                                                  range(label_size, len(labels) + 1, label_size))]
-            # labels = [labels[i] for i in range(batch)]
+            # labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
+            #                                       range(label_size, len(labels) + 1, label_size))]
+            labels = [labels[i] for i in range(batch)]
             output = output.detach().cpu().numpy()
             output = [output[:, i, :] for i in range(batch)]
             output = [naive_ctc_decode(o) for o in output]
@@ -100,8 +100,8 @@ def train(train_dir, valid_dir, device, nworkers, epochs):
     train_iter = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=nworkers)
     valid_iter = DataLoader(valid_dataset, batch_size, shuffle=False, num_workers=nworkers)
 
-    model = CaptchaModel(train_dataset.dims, len(train_dataset.symbols), height).to(device)
-    criterion = nn.CTCLoss().to(device)
+    model = CaptchaModel(len(train_dataset.symbols)).to(device)
+    criterion = nn.CTCLoss(zero_infinity=True).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-2)
 
     best_loss = None
@@ -128,7 +128,7 @@ def launch_train():
     parser.add_argument('--valid_dir', default='valid')
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu', type=str)
     parser.add_argument('--nworkers', default=4, type=int)
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=10000, type=int)
     args = parser.parse_args()
 
     train(args.train_dir, args.valid_dir, args.device, args.nworkers, args.epochs)
