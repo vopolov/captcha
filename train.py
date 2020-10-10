@@ -78,7 +78,7 @@ def valid_epoch(valid_iter, model, criterion):
     return total_loss / total, total_acc / total
 
 
-def train(train_dir, valid_dir, device, nworkers, epochs):
+def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
     train_dir = Path(train_dir)
     assert train_dir.is_dir()
     valid_dir = Path(valid_dir)
@@ -102,22 +102,39 @@ def train(train_dir, valid_dir, device, nworkers, epochs):
 
     model = CaptchaModel(len(train_dataset.symbols)).to(device)
     criterion = nn.CTCLoss(zero_infinity=True).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-2)
+    optimizer = optim.Adam(model.parameters(), lr=1e-1)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+    start_epoch = 1
+
+    if checkpoint is not None:
+        assert Path(checkpoint).is_file()
+        checkpoint = torch.load(checkpoint)
+        start_epoch = checkpoint['epoch'] + 1
+        model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
 
     best_loss = None
     best_path = None
     best_acc = None
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch, max_epochs + 1):
         train_loss, train_acc = train_epoch(train_iter, model, criterion, optimizer)
         valid_loss, valid_acc = valid_epoch(valid_iter, model, criterion)
+        scheduler.step(valid_loss)
         print('Epoch: {}'.format(epoch))
         print('Train loss: {:.3f}\tTrain acc: {:.3f}'.format(train_loss, train_acc))
         print('Valid loss: {:.3f}\tValid acc: {:.3f}'.format(valid_loss, valid_acc))
         if best_loss is None or valid_loss < best_loss:
             old_path = best_path
-            best_path = 'captcha_weights_epoch_{:03d}_acc_{:.3f}.pt'.format(epoch, valid_acc)
-            torch.save(model.state_dict(), best_path)
+            best_path = 'captcha_epoch_{:03d}_acc_{:.3f}.pt'.format(epoch, valid_acc)
+            checkpoint = {
+                'epoch': epoch,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scheduler': scheduler.state_dict(),
+            }
+            torch.save(checkpoint, best_path)
             if old_path is not None and Path(old_path).is_file():
                 Path(old_path).unlink()
 
@@ -128,10 +145,11 @@ def launch_train():
     parser.add_argument('--valid_dir', default='valid')
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu', type=str)
     parser.add_argument('--nworkers', default=4, type=int)
-    parser.add_argument('--epochs', default=10000, type=int)
+    parser.add_argument('--max_epochs', default=10000, type=int)
+    parser.add_argument('--checkpoint', default=None, type=str)
     args = parser.parse_args()
 
-    train(args.train_dir, args.valid_dir, args.device, args.nworkers, args.epochs)
+    train(args.train_dir, args.valid_dir, args.device, args.nworkers, args.max_epochs, args.checkpoint)
 
 
 if __name__ == '__main__':
