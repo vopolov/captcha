@@ -102,7 +102,7 @@ def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
 
     model = CaptchaModel(len(train_dataset.symbols)).to(device)
     criterion = nn.CTCLoss(zero_infinity=True).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-1)
+    optimizer = optim.SGD(model.parameters(), lr=1e-1)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     start_epoch = 1
 
