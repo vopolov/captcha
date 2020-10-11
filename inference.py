@@ -50,7 +50,7 @@ def launch_inference():
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.nworkers)
 
     model = CaptchaModelFixedSize(len(dataset.symbols), args.label_size).to(args.device)
-    model.load_state_dict(torch.load(Path(args.weights)))
+    model.load_state_dict(torch.load(Path(args.weights), map_location=args.device))
     model.eval()
 
     total = 0
