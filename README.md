@@ -23,7 +23,7 @@ Model supposed to be optimized with torch.nn.CTCLoss.\
 Currently this model hasn't been successfully optimized and may be bugged.\
 CaptchaFixedModel can only predict fixed number of letters and requires inputs of a fixed label length and image width.\
 It's outputs are same log probabilities and supposed to be passed to torch.nn.NLLLoss.\
-Outputs have shape of [batch_size, log_probabilities, label_width].\
+Outputs have shape of [batch_size, log_probabilities, label_width].
 ### train.py
 #### Used to train both models, can save checkpoints and store data for Tensorboard visualization and monitoring
 ### util.py
