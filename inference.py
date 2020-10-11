@@ -17,7 +17,7 @@ def launch_inference():
     parser.add_argument('--weights', default='weights.pt')
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--ext', default='png')
-    parser.add_argument('--save_preds', default='preds.json')
+    parser.add_argument('--save_preds', default=None)
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--nworkers', default=0, type=int)
     parser.add_argument('--label_size', default=5, type=int)
@@ -54,6 +54,13 @@ def launch_inference():
     total = 0
     total_acc = 0
 
+    if args.save_preds:
+        with open(args.save_preds, 'wt'):
+            pass
+
+    def decode(indices):
+        return ''.join(dataset.itos(i) for i in indices)
+
     with torch.no_grad():
         for images, labels in dataloader:
             images = images.to(args.device)
@@ -70,10 +77,22 @@ def launch_inference():
             output = list(output)
             labels = list(labels)
 
-            total_acc += sum(np.array_equal(o, l) for o, l in zip(output, labels))
+            if args.save_preds:
+                file = open(args.save_preds, 'at')
+
+            for o, l in zip(output, labels):
+                match = np.array_equal(o, l)
+                total_acc += int(match)
+                if args.save_preds:
+                    file.write(json.dumps({'label': decode(l), 'predicted': decode(o), 'match': match}) + '\n')
+
+            if args.save_preds:
+                file.close()
 
     total_acc /= total
     print('Per sample accuracy on {}:\n{:.2f} %'.format(args.data_dir, total_acc * 100))
+    if args.save_preds:
+        print('All predictions saved to {} in JSON lines format'.format(args.save_preds))
 
 
 if __name__ == '__main__':
