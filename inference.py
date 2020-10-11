@@ -12,10 +12,12 @@ from model import CaptchaModelFixedSize
 
 
 def launch_inference():
+    print('CUDA is available: {}'.format(torch.cuda.is_available()))
+
     parser = argparse.ArgumentParser()
     parser.add_argument('data_dir')
     parser.add_argument('--weights', default='weights.pt')
-    parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', default='cpu')
     parser.add_argument('--ext', default='png')
     parser.add_argument('--save_preds', default=None)
     parser.add_argument('--batch_size', default=1, type=int)
@@ -61,6 +63,9 @@ def launch_inference():
     def decode(indices):
         return ''.join(dataset.itos(i) for i in indices)
 
+    print('Images from {}'.format(args.data_dir))
+    print('Number of images: {}'.format(len(dataset)))
+
     with torch.no_grad():
         for images, labels in dataloader:
             images = images.to(args.device)
@@ -87,7 +92,7 @@ def launch_inference():
                 file.close()
 
     total_acc /= total
-    print('Per sample accuracy on {}:\n{:.2f} %'.format(args.data_dir, total_acc * 100))
+    print('Per sample accuracy on {}: {:.2f} %'.format(args.data_dir, total_acc * 100))
     if args.save_preds:
         print('All predictions saved to {} in JSON lines format'.format(args.save_preds))
 
