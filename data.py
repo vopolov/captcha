@@ -5,8 +5,11 @@ from string import ascii_uppercase
 import numpy as np
 import torch
 from PIL import Image
+from PIL import ImageFile
 from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class CaptchaDataset(Dataset):
