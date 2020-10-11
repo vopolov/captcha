@@ -51,8 +51,7 @@ class CaptchaDataset(Dataset):
         img = self._transform(img)
         if self.with_labels:
             label = Path(self._paths[index]).stem.upper()
-            # target dtype must by int32 to work with cudnn ctc loss
-            label = torch.tensor([self.stoi(s) for s in label], dtype=torch.int32)
+            label = torch.tensor([self.stoi(s) for s in label], dtype=torch.long)
             return img, label
         else:
             return img
