@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision.transforms import Resize, ToTensor, Normalize, Compose
+from torchvision.transforms import Resize, ToTensor, Normalize, Compose, Lambda
 
 from data import CaptchaDataset
 from model import CaptchaModel, CaptchaModelFixedSize
@@ -66,7 +66,7 @@ def run_one_epoch(phase, dataloader, model, criterion, optimizer, device):
     return total_loss / total, total_acc / total
 
 
-def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, modelname, checkpoint=None):
+def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, modelname, checkpoint, lr):
     train_dir = Path(train_dir)
     assert train_dir.is_dir()
     train_paths = list(train_dir.glob('*.{}'.format(ext)))
@@ -85,8 +85,11 @@ def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, modelname, 
     train_paths, valid_paths = train_paths[:train_split], train_paths[train_split:]
 
     preload = True
-    height = 150
-    width = 330
+    height = 120
+    width = 300
+    rmin, rmax, cmin, cmax = 10, 129, 8, 307
+    assert rmax - rmin + 1 == height
+    assert cmax - cmin + 1 == width
     # mean = (171.28, 181.15, 190.28)
     # std = (94.81, 91.23, 83.4)
     mean = (0.6699, 0.7106, 0.7476)
@@ -103,8 +106,9 @@ def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, modelname, 
     # ])
 
     valid_transform = Compose([
-        Resize(size=(height, width)),
+        # Resize(size=(height, width)),
         ToTensor(),
+        Lambda(lambda x: x[:, rmin:rmax+1, cmin:cmax+1]),
         Normalize(mean, std, inplace=True),
     ])
 
@@ -132,7 +136,7 @@ def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, modelname, 
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     model = CaptchaModelFixedSize(len(train_dataset.symbols), label_size).to(device)
     criterion = nn.NLLLoss().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-2)
+    optimizer = optim.Adam(model.parameters(), lr=float(lr))
     start_epoch = 1
 
     best_loss = 1e6
@@ -198,10 +202,11 @@ def launch_train():
     parser.add_argument('--nworkers', default=0, type=int)
     parser.add_argument('--max_epochs', default=10000, type=int)
     parser.add_argument('--checkpoint', default=None, type=str)
+    parser.add_argument('--lr', default='1e-3', type=str)
     args = parser.parse_args()
 
     train(args.train_dir, args.ext, args.train_ratio, args.device, args.nworkers, args.max_epochs, args.modelname,
-          args.checkpoint)
+          args.checkpoint, args.lr)
 
 
 if __name__ == '__main__':
