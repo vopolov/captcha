@@ -10,13 +10,11 @@ from torchvision.transforms import ToTensor
 
 
 class CaptchaDataset(Dataset):
-    def __init__(self, paths, with_labels=False, device='cpu', preload=False, transform=None):
+    def __init__(self, paths, with_labels=False, preload=False, transform=None):
         super().__init__()
 
         self._paths = paths
         self.with_labels = with_labels
-        self.device = device
-
         self.symbols = ['-'] + list(ascii_uppercase) + [str(i) for i in range(10)]
         self._index_dict = {i: s for i, s in enumerate(self.symbols, 0)}  # 0 left for predicted blank symbol
         self._symbols_dict = {s: i for i, s in enumerate(self.symbols, 0)}
@@ -40,25 +38,21 @@ class CaptchaDataset(Dataset):
     def _preload_data(self):
         self._data = []
         for p in self._paths:
-            self._data.append(self._read_image(p))
-
-    def _read_image(self, path):
-        img = Image.open(path)
-        img = self._transform(img)
-        img = img.to(self.device)
-        if self.with_labels:
-            label = Path(path).stem.upper()
-            # target dtype must by int32 to work with cudnn ctc loss
-            label = torch.tensor([self.stoi(s) for s in label], dtype=torch.int32).to(self.device)
-            return img, label
-        else:
-            return img
+            self._data.append(Image.open(p))
 
     def __getitem__(self, index):
         if self.preloaded:
-            return self._data[index]
+            img = self._data[index]
         else:
-            return self._read_image(self._paths[index])
+            img = Image.open(self._paths[index])
+        img = self._transform(img)
+        if self.with_labels:
+            label = Path(self._paths[index]).stem.upper()
+            # target dtype must by int32 to work with cudnn ctc loss
+            label = torch.tensor([self.stoi(s) for s in label], dtype=torch.int32)
+            return img, label
+        else:
+            return img
 
     def __len__(self):
         return len(self._paths)
