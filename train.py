@@ -1,74 +1,59 @@
 import argparse
+import random
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.multiprocessing as mp
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torchvision.transforms import Grayscale, ColorJitter, RandomChoice, RandomApply
+from torchvision.transforms import Resize, ToTensor, Normalize, Compose
 
 from data import CaptchaDataset
 from model import CaptchaModel
 from util import naive_ctc_decode
 
+torch.backends.cudnn.enabled = False
 
-def train_epoch(train_iter, model, criterion, optimizer):
-    model.train()
+
+def run_one_epoch(phase, dataloader, model, criterion, optimizer, device):
+    assert phase in ['train', 'valid']
+    if phase == 'train':
+        model.train()
+    elif phase == 'valid':
+        model.eval()
+    else:
+        return
+
     total_loss = 0
     total_acc = 0
     total = 0
-    for images, labels in train_iter:
-        optimizer.zero_grad()
 
-        output = model(images)
-        batch = output.shape[1]
-        width = output.shape[0]
-        input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32, device='cpu')
-        label_size = labels.shape[1]
-        target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32, device='cpu')
-        # labels = labels.view(-1).to('cpu')
-        loss = criterion(output, labels, input_lens, target_lens)
+    with torch.set_grad_enabled(phase == 'train'):
+        for images, labels, label_lens in dataloader:
+            if phase == 'train':
+                optimizer.zero_grad()
 
-        loss.backward()
-        # nn.utils.clip_grad_norm_(model.parameters(), 10)
-        optimizer.step()
+            images = images.to(device)
+            labels = labels.to(device)
+            label_lens = label_lens.to(device)
 
-        total += batch
-        total_loss += loss.item()
-        labels = labels.detach().cpu().numpy()
-        # labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
-        #                                       range(label_size, len(labels) + 1, label_size))]
-        labels = [labels[i] for i in range(batch)]
-        output = output.detach().cpu().numpy()
-        output = [output[:, i, :] for i in range(batch)]
-        output = [naive_ctc_decode(o) for o in output]
-        total_acc += sum(np.array_equal(o, l) for o, l in zip(output, labels))
-
-    return total_loss / total, total_acc / total
-
-
-def valid_epoch(valid_iter, model, criterion):
-    model.eval()
-    total_loss = 0
-    total_acc = 0
-    total = 0
-    with torch.no_grad():
-        for images, labels in valid_iter:
             output = model(images)
+
             batch = output.shape[1]
             width = output.shape[0]
-            input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.int32, device='cpu')
-            label_size = labels.shape[1]
-            target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32, device='cpu')
-            # labels = labels.view(-1).to('cpu')
-            loss = criterion(output, labels, input_lens, target_lens)
+            input_lens = torch.full(size=(batch,), fill_value=width, dtype=torch.long, device=device)
+            loss = criterion(output, labels, input_lens, label_lens)
+
+            if phase == 'train':
+                loss.backward()
+                optimizer.step()
 
             total += batch
             total_loss += loss.item()
+
             labels = labels.detach().cpu().numpy()
-            # labels = [labels[s:f] for s, f in zip(range(0, len(labels), label_size),
-            #                                       range(label_size, len(labels) + 1, label_size))]
             labels = [labels[i] for i in range(batch)]
             output = output.detach().cpu().numpy()
             output = [output[:, i, :] for i in range(batch)]
@@ -78,27 +63,65 @@ def valid_epoch(valid_iter, model, criterion):
     return total_loss / total, total_acc / total
 
 
-def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
+def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, checkpoint=None):
     train_dir = Path(train_dir)
     assert train_dir.is_dir()
-    valid_dir = Path(valid_dir)
-    assert valid_dir.is_dir()
+    train_paths = list(train_dir.glob('*.{}'.format(ext)))
+    assert len(train_paths) > 0
+
+    seed = 1
+    random.seed(seed)
+    random.shuffle(train_paths)
+    assert 0 < train_ratio < 1
+    train_split = int(len(train_paths) * train_ratio)
+    train_paths, valid_paths = train_paths[:train_split], train_paths[train_split:]
 
     preload = True
     height = 150
     width = 330
     mean = (171.28, 181.15, 190.28)
     std = (94.81, 91.23, 83.4)
-    label_size = 5
 
-    train_dataset = CaptchaDataset(train_dir, device, preload, height, width, mean, std, label_size)
-    valid_dataset = CaptchaDataset(valid_dir, device, preload, height, width, mean, std, label_size)
+    train_transform = Compose([
+        RandomApply([RandomChoice([
+            Grayscale(num_output_channels=3),
+            ColorJitter(hue=0.5),
+        ])], p=0.4),
+        Resize(size=(height, width)),
+        ToTensor(),
+        Normalize(mean, std, inplace=True),
+    ])
+
+    valid_transform = Compose([
+        Resize(size=(height, width)),
+        ToTensor(),
+        Normalize(mean, std, inplace=True),
+    ])
+
+    train_dataset = CaptchaDataset(
+        paths=train_paths,
+        with_labels=True,
+        preload=preload,
+        transform=train_transform,
+    )
+    valid_dataset = CaptchaDataset(
+        paths=valid_paths,
+        with_labels=True,
+        preload=preload,
+        transform=valid_transform,
+    )
 
     batch_size = 16
 
-    mp.set_start_method("spawn")
-    train_iter = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=nworkers)
-    valid_iter = DataLoader(valid_dataset, batch_size, shuffle=False, num_workers=nworkers)
+    def captcha_collate(batch):
+        images, labels = zip(*batch)
+        label_lens = torch.tensor([l.shape[0] for l in labels], dtype=torch.long)
+        images = torch.stack(images)
+        labels = torch.cat(labels)
+        return images, labels, label_lens
+
+    train_iter = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=nworkers, collate_fn=captcha_collate)
+    valid_iter = DataLoader(valid_dataset, batch_size, shuffle=False, num_workers=nworkers, collate_fn=captcha_collate)
 
     model = CaptchaModel(len(train_dataset.symbols)).to(device)
     criterion = nn.CTCLoss(zero_infinity=True).to(device)
@@ -114,18 +137,18 @@ def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
         optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
 
-    best_loss = None
+    best_loss = 1e6
     best_path = None
     best_acc = None
 
     for epoch in range(start_epoch, max_epochs + 1):
-        train_loss, train_acc = train_epoch(train_iter, model, criterion, optimizer)
-        valid_loss, valid_acc = valid_epoch(valid_iter, model, criterion)
+        train_loss, train_acc = run_one_epoch('train', train_iter, model, criterion, optimizer, device)
+        valid_loss, valid_acc = run_one_epoch('valid', valid_iter, model, criterion, None, device)
         scheduler.step(valid_loss)
         print('Epoch: {}'.format(epoch))
         print('Train loss: {:.3f}\tTrain acc: {:.3f}'.format(train_loss, train_acc))
         print('Valid loss: {:.3f}\tValid acc: {:.3f}'.format(valid_loss, valid_acc))
-        if best_loss is None or valid_loss < best_loss:
+        if valid_loss < best_loss:
             best_loss = valid_loss
             old_path = best_path
             best_path = 'captcha_epoch_{:03d}_acc_{:.3f}.pt'.format(epoch, valid_acc)
@@ -143,14 +166,15 @@ def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
 def launch_train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_dir', default='train')
-    parser.add_argument('--valid_dir', default='valid')
+    parser.add_argument('--ext', default='png', choices=['png', 'jpg'])
+    parser.add_argument('--train_ratio', default=0.8)
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu', type=str)
     parser.add_argument('--nworkers', default=4, type=int)
     parser.add_argument('--max_epochs', default=10000, type=int)
     parser.add_argument('--checkpoint', default=None, type=str)
     args = parser.parse_args()
 
-    train(args.train_dir, args.valid_dir, args.device, args.nworkers, args.max_epochs, args.checkpoint)
+    train(args.train_dir, args.ext, args.train_ratio, args.device, args.nworkers, args.max_epochs, args.checkpoint)
 
 
 if __name__ == '__main__':
