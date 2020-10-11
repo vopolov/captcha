@@ -31,6 +31,29 @@ class CaptchaModel(nn.Module):
         return x
 
 
+class CaptchaModelFixedSize(nn.Module):
+    def __init__(self, n_classes, output_width=5):
+        super().__init__()
+
+        self.n_classes = n_classes
+        self.output_width = output_width
+        # all resnet18 layers up to avgpool
+        self.resnet_ch = 512
+        self.resnet_features = nn.Sequential(*list(resnet18(pretrained=False).children())[:-2])
+        self.pool = nn.AdaptiveAvgPool2d((1, self.output_width))
+        self.linear = nn.Linear(self.output_width * self.resnet_ch, self.output_width * self.n_classes)
+
+    def forward(self, x):
+        x = self.resnet_features(x)
+        x = self.pool(x)
+        batch_dim = x.shape[0]
+        x = x.view(batch_dim, -1)
+        x = self.linear(x)
+        x = x.view(batch_dim, self.n_classes, self.output_width)
+        x = F.log_softmax(x, 1)
+        return x
+
+
 if __name__ == '__main__':
     batch = 1
     channels = 3
@@ -40,16 +63,20 @@ if __name__ == '__main__':
     label_size = 5
 
     in_tensor = torch.rand(size=(batch, channels, h, w), dtype=torch.float)
-    targets = torch.randint(low=1, high=classes, size=(batch, label_size), dtype=torch.int32)
-    target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.int32)
+    targets = torch.randint(low=1, high=classes, size=(batch, label_size), dtype=torch.long)
+    target_lens = torch.full(size=(batch,), fill_value=label_size, dtype=torch.long)
 
-    model = CaptchaModel(classes)
+    # model = CaptchaModel(classes)
+    model = CaptchaModelFixedSize(classes, label_size)
     print('Number of trainable parameters: {}'.format(sum(p.numel() for p in model.parameters()
                                                           if p.requires_grad is True)))
     print(model)
-    criterion = nn.CTCLoss()
+    # criterion = nn.CTCLoss()
+    criterion = nn.NLLLoss()
 
     output = model(in_tensor)
-    input_lens = torch.full(size=(batch,), fill_value=output.shape[0], dtype=torch.int32)
-    loss = criterion(output, targets, input_lens, target_lens)
+    print(output.shape)
+    input_lens = torch.full(size=(batch,), fill_value=output.shape[0], dtype=torch.long)
+    # loss = criterion(output, targets, input_lens, target_lens)
+    loss = criterion(output, targets)
     loss.backward()
