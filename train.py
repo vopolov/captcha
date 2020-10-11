@@ -90,10 +90,8 @@ def train(train_dir, ext, train_ratio, device, nworkers, max_epochs, modelname, 
     rmin, rmax, cmin, cmax = 10, 129, 8, 307
     assert rmax - rmin + 1 == height
     assert cmax - cmin + 1 == width
-    # mean = (171.28, 181.15, 190.28)
-    # std = (94.81, 91.23, 83.4)
-    mean = (0.6699, 0.7106, 0.7476)
-    std = (0.3723, 0.3575, 0.3259)
+    mean = (0.5461, 0.6021, 0.6530)
+    std = (0.3666, 0.3641, 0.3365)
 
     # train_transform = Compose([
     #     RandomApply([RandomChoice([
