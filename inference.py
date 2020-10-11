@@ -74,9 +74,6 @@ def launch_inference():
             batch = labels.shape[0]
             total += batch
 
-            output = list(output)
-            labels = list(labels)
-
             if args.save_preds:
                 file = open(args.save_preds, 'at')
 
