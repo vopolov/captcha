@@ -94,7 +94,7 @@ def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
     train_dataset = CaptchaDataset(train_dir, device, preload, height, width, mean, std, label_size)
     valid_dataset = CaptchaDataset(valid_dir, device, preload, height, width, mean, std, label_size)
 
-    batch_size = 32
+    batch_size = 16
 
     mp.set_start_method("spawn")
     train_iter = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=nworkers)
@@ -126,6 +126,7 @@ def train(train_dir, valid_dir, device, nworkers, max_epochs, checkpoint=None):
         print('Train loss: {:.3f}\tTrain acc: {:.3f}'.format(train_loss, train_acc))
         print('Valid loss: {:.3f}\tValid acc: {:.3f}'.format(valid_loss, valid_acc))
         if best_loss is None or valid_loss < best_loss:
+            best_loss = valid_loss
             old_path = best_path
             best_path = 'captcha_epoch_{:03d}_acc_{:.3f}.pt'.format(epoch, valid_acc)
             checkpoint = {
