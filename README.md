@@ -32,6 +32,6 @@ Outputs have shape of [batch_size, log_probabilities, label_size].
 Docker image can be built with: "docker build -t captcha-docker ."\
 Docker build requires weights.pt file to be included in the project's root directory. This file must contain weights for trained CaptchaFixedModel.\
 After building container can be run with: "docker run -v DATA_DIR:/captcha/test captcha-docker test --device cpu" on cpu or\
-"nvidia-docker run -v DATA_DIR:/captcha/test captcha-docker test --device cuda" if you have the nvidia-docker extension installed.\
+"nvidia-docker run -v DATA_DIR:/captcha/test captcha-docker test --device cuda" on gpu if you have the nvidia-docker extension installed.\
 DATA_DIR is full path to the test directory.
 
