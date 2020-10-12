@@ -22,15 +22,15 @@ CaptchaModel can work with arbitrary length phrases and don't have image width r
 Model supposed to be optimized with torch.nn.CTCLoss.\
 Currently this model hasn't been successfully optimized and may be bugged.\
 CaptchaFixedModel can only predict fixed number of letters and requires inputs of a fixed label length and image width.\
-It's outputs are same log probabilities and supposed to be passed to torch.nn.NLLLoss.\
-Outputs have shape of [batch_size, log_probabilities, label_width].
+It's outputs are the same log probabilities and supposed to be passed to torch.nn.NLLLoss.\
+Outputs have shape of [batch_size, log_probabilities, label_size].
 ### train.py
 #### Used to train both models, can save checkpoints and store data for Tensorboard visualization and monitoring
 ### util.py
 #### Contains only ctc_naive_decoder to decode outputs from CaptchaModel
 ## Running with Docker
 Docker image can be built with: "docker build -t captcha-docker ."\
-Docker build requires weights.pt file to be included in the root project directory. This file must contain weights for trained CaptchaFixedModel.\
+Docker build requires weights.pt file to be included in the project's root directory. This file must contain weights for trained CaptchaFixedModel.\
 After building container can be run with: "docker run -v DATA_DIR:/captcha/test captcha-docker test --device cpu" on cpu or\
 "nvidia-docker run -v DATA_DIR:/captcha/test captcha-docker test --device cuda" if you have the nvidia-docker extension installed.\
 DATA_DIR is full path to the test directory.
